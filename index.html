@@ -224,7 +224,7 @@ main { max-width:780px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BYTA URL: Klistra in din Apps Script webb-URL här
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwvpNRZ3wC6yeilncQOaGQPQ8hA38vIPfQgKYGcwTFSSHzepNUjz_At6Oua6UxYb3W7/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEL7hZBFZ2FgzsCzJyBpY_Ix0sJa_rAAzLMHB-btFkrm5rlwQjUpXDJQHFdCwbwsM/exec";
 // Klistra in ditt Google Sheets ID här (samma som du lade i Apps Script)
 const SHEET_ID = "1twV4jFz-tlvWTBVDy7r_oOslH3su8-71KuCiMFp-IaY";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -267,7 +267,8 @@ async function fetchData(){
   try {
     setLoading(true);
     // Hämta sheet som CSV — fungerar utan CORS om sheetet är publikt
-    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Svar&t=${Date.now()}`;
+    const sheetName=encodeURIComponent("1twV4jFz-tlvWTBVDy7r_oOslH3su8-71KuCiMFp-IaY");
+    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${sheetName}&t=${Date.now()}`;
     const res=await fetch(url);
     const csv=await res.text();
     parseCSVandRender(csv);
