@@ -224,7 +224,7 @@ main { max-width:780px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BYTA URL: Klistra in din Apps Script webb-URL här
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1sJfBq3OOQ1YeH3rtMoOK2qmRI6306UKq1xLJtaYZ1PfJl5LuiqAnMRB4e9hnahBV/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxq4rieftojh4tralySc88OxHnv84DGFqbCimNIFP3kZ33EEAvDniHfJJgRtP3YPatK/exec";
 // Klistra in ditt Google Sheets ID här (samma som du lade i Apps Script)
 const SHEET_ID = "1twV4jFz-tlvWTBVDy7r_oOslH3su8-71KuCiMFp-IaY";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -278,7 +278,7 @@ async function fetchData(){
 }
 
 function parseCSVandRender(csv){
-  const lines=csv.trim().split('\n').slice(1); // hoppa över rubrikrad
+  const lines=csv.trim().split('\n').slice(1);
   if(!lines[0]||lines[0].trim()===''){
     votes={}; respondents=[];
     renderCalendar(); renderResults(); return;
@@ -287,7 +287,6 @@ function parseCSVandRender(csv){
   const nameMap={};
 
   lines.forEach(line=>{
-    // CSV-parsing som hanterar citattecken
     const cols=[];
     let cur='', inQ=false;
     for(let c of line){
@@ -298,18 +297,24 @@ function parseCSVandRender(csv){
     cols.push(cur.trim());
 
     const name=(cols[1]||'').replace(/^"|"$/g,'').trim();
-    const date=(cols[2]||'').replace(/^"|"$/g,'').trim();
+    const rawDate=(cols[2]||'').replace(/^"|"$/g,'').trim();
     const timesRaw=(cols[3]||'').replace(/^"|"$/g,'').trim();
-    if(!name||!date||!timesRaw) return;
+    if(!name||!rawDate||!timesRaw) return;
 
-    // Normalisera datumet från "Thu May 21 2026" → "2026-05-21"
-    const parsedDate=new Date(date);
-    let dateStr=date;
-    if(!isNaN(parsedDate)){
-      const y=parsedDate.getFullYear();
-      const m=String(parsedDate.getMonth()+1).padStart(2,'0');
-      const d=String(parsedDate.getDate()).padStart(2,'0');
-      dateStr=`${y}-${m}-${d}`;
+    // Normalisera datum till YYYY-MM-DD oavsett format från Sheets
+    let dateStr=rawDate;
+    // Redan rätt format: 2026-05-21
+    if(/^\d{4}-\d{2}-\d{2}$/.test(rawDate)){
+      dateStr=rawDate;
+    } else {
+      // Försök parsa "Thu May 21 2026", "Fri May 29 2026" etc
+      const parsed=new Date(rawDate);
+      if(!isNaN(parsed)){
+        const y=parsed.getFullYear();
+        const m=String(parsed.getMonth()+1).padStart(2,'0');
+        const d=String(parsed.getDate()).padStart(2,'0');
+        dateStr=`${y}-${m}-${d}`;
+      }
     }
 
     const times=timesRaw.split(',').map(t=>t.trim()).filter(Boolean);
