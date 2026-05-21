@@ -224,8 +224,9 @@ main { max-width:780px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BYTA URL: Klistra in din Apps Script webb-URL här
-// (du får den i steg 3 nedan)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzmcSxdogMgzIuprfVg4JL5CWFjRY8LMlDfNpAbhtz-TpE1Ip4lbjrVgEeHQwUT3ZuR/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1sJfBq3OOQ1YeH3rtMoOK2qmRI6306UKq1xLJtaYZ1PfJl5LuiqAnMRB4e9hnahBV/exec";
+// Klistra in ditt Google Sheets ID här (samma som du lade i Apps Script)
+const SHEET_ID = "1twV4jFz-tlvWTBVDy7r_oOslH3su8-71KuCiMFp-IaY";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const MONTHS=['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
@@ -254,97 +255,94 @@ function setLoading(on){
   document.getElementById('submit-btn').disabled=on;
 }
 
-// ── GOOGLE SHEETS: HÄMTA DATA (JSONP) ────────────
-// Använder JSONP för att kringgå CORS på GET-anrop
-function fetchData(){
-  return new Promise((resolve) => {
-    if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){
-      document.getElementById('respondents-list').innerHTML=
-        '<div class="empty-results">Inga svar ännu — bli den första!</div>';
-      resolve(); return;
-    }
+// ── GOOGLE SHEETS: HÄMTA DATA via CSV ────────────
+// Läser direkt från Google Sheets publik CSV — ingen CORS-blockering
+async function fetchData(){
+  const noUrl = SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR" || SHEET_ID==="DIN_SHEET_ID_HÄR";
+  if(noUrl){
+    document.getElementById('respondents-list').innerHTML=
+      '<div class="empty-results">Inga svar ännu — bli den första!</div>';
+    return;
+  }
+  try {
     setLoading(true);
+    // Hämta sheet som CSV — fungerar utan CORS om sheetet är publikt
+    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Svar&t=${Date.now()}`;
+    const res=await fetch(url);
+    const csv=await res.text();
+    parseCSVandRender(csv);
+  } catch(err){
+    document.getElementById('respondents-list').innerHTML=
+      '<div class="empty-results">Inga svar ännu — bli den första!</div>';
+  } finally { setLoading(false); }
+}
 
-    // Ta bort gammalt script-element om det finns
-    const old=document.getElementById('jsonp-script');
-    if(old) old.remove();
+function parseCSVandRender(csv){
+  const lines=csv.trim().split('\n').slice(1); // hoppa över rubrikrad
+  if(!lines[0]||lines[0].trim()===''){
+    votes={}; respondents=[];
+    renderCalendar(); renderResults(); return;
+  }
+  const newVotes={};
+  const nameMap={};
 
-    // Callback-funktion som Apps Script anropar
-    window.__jsonpCallback=function(data){
-      setLoading(false);
-      if(data&&data.ok){
-        votes=data.votes||{};
-        respondents=data.respondents||[];
-        renderCalendar();
-        renderResults();
-      }
-      resolve();
-    };
+  lines.forEach(line=>{
+    // CSV-parsing som hanterar citattecken
+    const cols=[];
+    let cur='', inQ=false;
+    for(let c of line){
+      if(c==='"'){ inQ=!inQ; }
+      else if(c===','&&!inQ){ cols.push(cur.trim()); cur=''; }
+      else cur+=c;
+    }
+    cols.push(cur.trim());
 
-    // Skapa script-tag med callback-parameter
-    const script=document.createElement('script');
-    script.id='jsonp-script';
-    script.src=SCRIPT_URL+'?callback=__jsonpCallback&t='+Date.now();
-    script.onerror=()=>{
-      setLoading(false);
-      // Tyst fel — visa tomma svar istället för felmeddelande
-      document.getElementById('respondents-list').innerHTML=
-        '<div class="empty-results">Inga svar ännu — bli den första!</div>';
-      resolve();
-    };
-    document.head.appendChild(script);
+    const name=(cols[1]||'').replace(/^"|"$/g,'').trim();
+    const date=(cols[2]||'').replace(/^"|"$/g,'').trim();
+    const timesRaw=(cols[3]||'').replace(/^"|"$/g,'').trim();
+    if(!name||!date||!timesRaw) return;
 
-    // Timeout efter 8 sekunder
-    setTimeout(()=>{
-      setLoading(false);
-      if(!respondents.length){
-        document.getElementById('respondents-list').innerHTML=
-          '<div class="empty-results">Inga svar ännu — bli den första!</div>';
-      }
-      resolve();
-    }, 8000);
+    // Normalisera datumet från "Thu May 21 2026" → "2026-05-21"
+    const parsedDate=new Date(date);
+    let dateStr=date;
+    if(!isNaN(parsedDate)){
+      const y=parsedDate.getFullYear();
+      const m=String(parsedDate.getMonth()+1).padStart(2,'0');
+      const d=String(parsedDate.getDate()).padStart(2,'0');
+      dateStr=`${y}-${m}-${d}`;
+    }
+
+    const times=timesRaw.split(',').map(t=>t.trim()).filter(Boolean);
+    if(!nameMap[name]) nameMap[name]={};
+    if(!nameMap[name][dateStr]) nameMap[name][dateStr]=[];
+    times.forEach(t=>{
+      if(!nameMap[name][dateStr].includes(t)) nameMap[name][dateStr].push(t);
+      const k=dateStr+'|'+t;
+      if(!newVotes[k]) newVotes[k]=[];
+      if(!newVotes[k].includes(name)) newVotes[k].push(name);
+    });
   });
+
+  votes=newVotes;
+  respondents=Object.entries(nameMap).map(([name,days])=>({name,days}));
+  renderCalendar();
+  renderResults();
 }
 
 // ── GOOGLE SHEETS: SPARA DATA ─────────────────────
-// Använder no-cors iframe-trick för att kringgå CORS-begränsning i Apps Script
 function saveToSheet(name, days){
   return new Promise((resolve) => {
     if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){ resolve(true); return; }
-
-    // Skicka via ett dolt formulär — Apps Script accepterar detta utan CORS-fel
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = SCRIPT_URL;
-    form.target = 'hidden-iframe';
-    form.style.display = 'none';
-
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'payload';
-    input.value = JSON.stringify({name, days});
-    form.appendChild(input);
-
-    let iframe = document.getElementById('hidden-iframe');
-    if(!iframe){
-      iframe = document.createElement('iframe');
-      iframe.name = 'hidden-iframe';
-      iframe.id = 'hidden-iframe';
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-    }
-
-    // Ge scriptet 4 sekunder att spara, sen hämta färska data
-    iframe.onload = () => {
-      setTimeout(() => { fetchData(); resolve(true); }, 500);
-    };
-
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-
-    // Fallback om iframe inte triggar onload
-    setTimeout(() => resolve(true), 4000);
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ name, days })
+    })
+    .finally(() => {
+      // Vänta 2.5 sek så Apps Script hinner spara, hämta sen färsk CSV
+      setTimeout(() => { fetchData(); resolve(true); }, 2500);
+    });
   });
 }
 
