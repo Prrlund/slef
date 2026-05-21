@@ -225,7 +225,7 @@ main { max-width:780px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BYTA URL: Klistra in din Apps Script webb-URL här
 // (du får den i steg 3 nedan)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxU4zbI8gAiSbhYXlyQti-rwA9Acfh6ytWqdYiIqyqjXR8MYc5qx0TZjgeO34Kd3yR3/exec";
+const SCRIPT_URL = "DIN_APPS_SCRIPT_URL_HÄR";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const MONTHS=['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
@@ -254,28 +254,56 @@ function setLoading(on){
   document.getElementById('submit-btn').disabled=on;
 }
 
-// ── GOOGLE SHEETS: HÄMTA DATA ─────────────────────
-async function fetchData(){
-  if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){
-    document.getElementById('respondents-list').innerHTML=
-      '<div class="empty-results">Inga svar ännu — bli den första!</div>';
-    return;
-  }
-  try {
-    setLoading(true);
-    const res=await fetch(SCRIPT_URL, {redirect:'follow'});
-    const text=await res.text();
-    const data=JSON.parse(text);
-    if(data.ok){
-      votes=data.votes||{};
-      respondents=data.respondents||[];
-      renderCalendar();
-      renderResults();
+// ── GOOGLE SHEETS: HÄMTA DATA (JSONP) ────────────
+// Använder JSONP för att kringgå CORS på GET-anrop
+function fetchData(){
+  return new Promise((resolve) => {
+    if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){
+      document.getElementById('respondents-list').innerHTML=
+        '<div class="empty-results">Inga svar ännu — bli den första!</div>';
+      resolve(); return;
     }
-  } catch(err){
-    document.getElementById('respondents-list').innerHTML=
-      '<div class="status-msg error">Kunde inte ladda svar — kontrollera att Apps Script URL:en är rätt och att webbappen är publicerad som "Alla".</div>';
-  } finally { setLoading(false); }
+    setLoading(true);
+
+    // Ta bort gammalt script-element om det finns
+    const old=document.getElementById('jsonp-script');
+    if(old) old.remove();
+
+    // Callback-funktion som Apps Script anropar
+    window.__jsonpCallback=function(data){
+      setLoading(false);
+      if(data&&data.ok){
+        votes=data.votes||{};
+        respondents=data.respondents||[];
+        renderCalendar();
+        renderResults();
+      }
+      resolve();
+    };
+
+    // Skapa script-tag med callback-parameter
+    const script=document.createElement('script');
+    script.id='jsonp-script';
+    script.src=SCRIPT_URL+'?callback=__jsonpCallback&t='+Date.now();
+    script.onerror=()=>{
+      setLoading(false);
+      // Tyst fel — visa tomma svar istället för felmeddelande
+      document.getElementById('respondents-list').innerHTML=
+        '<div class="empty-results">Inga svar ännu — bli den första!</div>';
+      resolve();
+    };
+    document.head.appendChild(script);
+
+    // Timeout efter 8 sekunder
+    setTimeout(()=>{
+      setLoading(false);
+      if(!respondents.length){
+        document.getElementById('respondents-list').innerHTML=
+          '<div class="empty-results">Inga svar ännu — bli den första!</div>';
+      }
+      resolve();
+    }, 8000);
+  });
 }
 
 // ── GOOGLE SHEETS: SPARA DATA ─────────────────────
