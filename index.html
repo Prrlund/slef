@@ -225,7 +225,7 @@ main { max-width:780px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BYTA URL: Klistra in din Apps Script webb-URL här
 // (du får den i steg 3 nedan)
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxLvbZulvUJec4DwUGHJchB-knwTIJ078ByrFwssOToCfM5O_GNrkJOIjjDAu5VBw3w/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjOEyBYBN-_8o-GqiTT6tN8Pb9lq6vQtGJnOLkrldZdVq_M3wWwus8WxLw8rmUnVDd/exec";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const MONTHS=['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
@@ -258,13 +258,14 @@ function setLoading(on){
 async function fetchData(){
   if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){
     document.getElementById('respondents-list').innerHTML=
-      '<div class="status-msg error">Lägg in din Apps Script URL i koden för att aktivera databasen.</div>';
+      '<div class="empty-results">Inga svar ännu — bli den första!</div>';
     return;
   }
   try {
     setLoading(true);
-    const res=await fetch(SCRIPT_URL);
-    const data=await res.json();
+    const res=await fetch(SCRIPT_URL, {redirect:'follow'});
+    const text=await res.text();
+    const data=JSON.parse(text);
     if(data.ok){
       votes=data.votes||{};
       respondents=data.respondents||[];
@@ -273,19 +274,50 @@ async function fetchData(){
     }
   } catch(err){
     document.getElementById('respondents-list').innerHTML=
-      '<div class="status-msg error">Kunde inte ladda svar. Kontrollera URL:en.</div>';
+      '<div class="status-msg error">Kunde inte ladda svar — kontrollera att Apps Script URL:en är rätt och att webbappen är publicerad som "Alla".</div>';
   } finally { setLoading(false); }
 }
 
 // ── GOOGLE SHEETS: SPARA DATA ─────────────────────
-async function saveToSheet(name, days){
-  if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR") return true; // lokalt läge
-  const res=await fetch(SCRIPT_URL,{
-    method:'POST',
-    body: JSON.stringify({name, days}),
+// Använder no-cors iframe-trick för att kringgå CORS-begränsning i Apps Script
+function saveToSheet(name, days){
+  return new Promise((resolve) => {
+    if(SCRIPT_URL==="DIN_APPS_SCRIPT_URL_HÄR"){ resolve(true); return; }
+
+    // Skicka via ett dolt formulär — Apps Script accepterar detta utan CORS-fel
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = SCRIPT_URL;
+    form.target = 'hidden-iframe';
+    form.style.display = 'none';
+
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify({name, days});
+    form.appendChild(input);
+
+    let iframe = document.getElementById('hidden-iframe');
+    if(!iframe){
+      iframe = document.createElement('iframe');
+      iframe.name = 'hidden-iframe';
+      iframe.id = 'hidden-iframe';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    // Ge scriptet 4 sekunder att spara, sen hämta färska data
+    iframe.onload = () => {
+      setTimeout(() => { fetchData(); resolve(true); }, 500);
+    };
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    // Fallback om iframe inte triggar onload
+    setTimeout(() => resolve(true), 4000);
   });
-  const data=await res.json();
-  return data.ok;
 }
 
 // ── NAV ───────────────────────────────────────────
@@ -517,7 +549,11 @@ function showToast(msg){
 }
 
 // ── INIT ──────────────────────────────────────────
-renderCalendar(); updateSummary(); fetchData();
+renderCalendar();
+updateSummary();
+fetchData().catch(()=>{
+  document.getElementById("respondents-list").innerHTML='<div class="empty-results">Inga svar 00e4nnu 2014 bli den f00f6rsta!</div>';
+});
 </script>
 </body>
 </html>
